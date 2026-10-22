@@ -24,6 +24,7 @@ backlog can sync between machines without logins.
 - Start the database: `docker compose up -d postgres`
 - Check: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
 - Run: `cargo run` with `DATABASE_URL` set, or `docker compose up --build`.
+- Deploy: see `deploy/README.md` (`docker compose -f deploy/compose.yml up -d --build` on the server).
 - After changing a query or migration: install sqlx-cli once with
   `cargo install sqlx-cli --no-default-features --features rustls,postgres`, then
   run `sqlx migrate run` and `cargo sqlx prepare -- --all-targets`, and commit

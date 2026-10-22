@@ -73,7 +73,10 @@ Commit the updated `.sqlx/`. A stale `.sqlx/` fails the build on purpose.
 plus `cargo sqlx prepare --check -- --all-targets` against PostgreSQL 17 and a
 Docker build. A stale `.sqlx/` therefore fails CI.
 
-## Deployment notes
+## Deployment
+
+The production stack (service, PostgreSQL and nightly backups) and its runbook
+are in [`deploy/README.md`](deploy/README.md).
 
 There are no body size or rate limits (contract §8). A reverse proxy in front of
 the service must raise its own body limit (nginx defaults to 1 MB), or large

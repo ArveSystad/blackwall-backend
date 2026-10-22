@@ -1,0 +1,58 @@
+# Production stack: the sync service, PostgreSQL 17 and nightly backups.
+# Run from the repo root: docker compose -f deploy/compose.yml up -d --build
+# Configuration comes from deploy/.env (copy deploy/.env.example). See deploy/README.md.
+name: blackwall-sync
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: blackwall
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: blackwall
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blackwall -d blackwall"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  service:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: blackwall-backend:latest
+    environment:
+      DATABASE_URL: postgres://blackwall:${POSTGRES_PASSWORD}@postgres:5432/blackwall
+      RUST_LOG: info
+    # Only the reverse proxy should reach this; keep the default loopback bind
+    # unless the proxy runs on another host and the port is firewalled.
+    ports:
+      - "${SYNC_BIND_ADDR:-127.0.0.1}:${SYNC_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backup:
+    image: postgres:17
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: blackwall
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: blackwall
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
