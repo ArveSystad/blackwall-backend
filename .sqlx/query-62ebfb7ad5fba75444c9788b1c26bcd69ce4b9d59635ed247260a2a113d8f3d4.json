@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE blobs\n         SET blob = NULL, write_token_hash = NULL, deleted_at = now(), updated_at = now()\n         WHERE sync_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62ebfb7ad5fba75444c9788b1c26bcd69ce4b9d59635ed247260a2a113d8f3d4"
+}

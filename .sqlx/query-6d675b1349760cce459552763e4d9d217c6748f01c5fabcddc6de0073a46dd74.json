@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO blobs (sync_id, version, blob, write_token_hash)\n         VALUES ($1, 1, $2, $3)\n         ON CONFLICT (sync_id) DO NOTHING\n         RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6d675b1349760cce459552763e4d9d217c6748f01c5fabcddc6de0073a46dd74"
+}
