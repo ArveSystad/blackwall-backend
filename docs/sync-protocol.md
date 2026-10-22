@@ -269,7 +269,8 @@ remote data yet, and the client creates it on its next push.
   when the remote `format` is greater than the highest it understands, and tells
   the user to update blackwall.
 - Timestamps (`createdAt`, `updatedAt`, tombstone times) are integers: ms since
-  the Unix epoch, as blackwall stores them.
+  the Unix epoch, as blackwall stores them. Untouched seed rows carry a small
+  fixed seed revision instead (section 6.7).
 - Each table is an object keyed by the row's **sync key**:
 
   | Table          | Sync key                               |
@@ -559,6 +560,51 @@ it **always merges both sides, without a prompt**:
 3. Normal last-writer-wins (section 6.2) applies.
 4. The merged result is pushed.
 
+A machine can only enter the key after its first start has seeded the built-in
+data, so seeded rows must never beat the user's real edits or deletes. Section
+6.7 guarantees this; first join needs no special case.
+
+### 6.7 Seed data
+
+Blackwall seeds built-in data on first start: the built-in agents, the
+`roleDefaults` setting and the default tags. Seed rows carry a **seed
+timestamp** instead of the current time:
+
+- A seed row's `createdAt` and `updatedAt` are both the **seed revision**: a
+  small non-negative integer, fixed in blackwall's seed definitions and the same
+  on every machine. Read as ms since the epoch it is older than any real edit or
+  delete, so any real edit and any tombstone beats an untouched seed row under
+  section 6.2.
+- Seeding writes these timestamps directly through the database, bypassing the
+  helpers that stamp the current time (`$onUpdateFn`, `settings.set`,
+  `tags.replace`), as apply does (section 6.4).
+- Upgrading a seed prompt (only done on agents that still equal the previous
+  seed) sets `updatedAt` to the new, higher seed revision, so a newer seed beats
+  an older untouched seed but never a user edit.
+- Any local edit to a seed row stamps the current time as usual; from then on
+  it is an ordinary row.
+- Two machines with the same untouched seed row produce identical rows, so
+  merging them changes nothing and the document hash agrees.
+- Existing installs: follow-up 3's migration resets `createdAt` and `updatedAt`
+  to the seed revision on every seed agent, the `roleDefaults` setting and every
+  default tag whose content still equals its seed definition exactly. Rows the
+  user has changed keep their timestamps.
+
+Consequences on first join, with machine A already syncing and a freshly seeded
+machine B joining:
+
+- A's edits to a seed agent, `roleDefaults` or a default tag's position win over
+  B's untouched seed rows.
+- A seed agent or default tag that A deleted stays deleted: A's tombstone is
+  newer than B's seed row (section 6.2), and B's `seeded.*` markers (section
+  4.5) stop B from seeding it again.
+
+Follow-up 3 must test this: machine A edits a seed agent's prompt, eligible
+stages and models, changes `roleDefaults`, reorders the default tags and
+deletes a seed agent and a seed tag; then a freshly seeded machine B joins. After
+the merge both machines hold A's state, and neither brings the deleted rows
+back.
+
 ## 7. Client behaviour
 
 - **Endpoint:** no default. The server URL is a local setting entered in
@@ -611,7 +657,7 @@ it **always merges both sides, without a prompt**:
 | 3    | Syncing security-relevant repo fields       | They sync, but each machine confirms them before first use (section 5).                                         |
 | 4    | Per-repo runner state                       | Stays local, including `autonomous`.                                                                             |
 | 5    | Promoted items                              | Synced with status; shown as "running elsewhere" without a local `taskId`; the runner never promotes a `promoted` item; a double promotion in one sync window is accepted for v1. |
-| 6    | First join                                  | Always merge both sides, without a prompt.                                                                       |
+| 6    | First join                                  | Always merge both sides, without a prompt. Untouched seed rows carry a fixed seed revision as their timestamps, so they never beat real edits or deletes (section 6.7). |
 | 7    | Deleting server data                        | `DELETE` erases the blob and leaves a deletion marker; every later request on that `syncId` gets `410`; Disconnect is local only. |
 | 8    | Server-side limits                          | None: no body cap, no rate limits, no `413`/`429`.                                                               |
 | RQ2  | Do synced agents need local confirmation?   | Yes. The agent gate covers both `prompt` and `permissionOverrides`.                                              |
