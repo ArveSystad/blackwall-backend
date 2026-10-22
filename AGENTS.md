@@ -28,3 +28,5 @@ backlog can sync between machines without logins.
   `cargo install sqlx-cli --no-default-features --features rustls,postgres`, then
   run `sqlx migrate run` and `cargo sqlx prepare -- --all-targets`, and commit
   `.sqlx/`. Check freshness with `cargo sqlx prepare --check -- --all-targets`.
+- CI (`.github/workflows/ci.yml`) runs all of the above plus `cargo sqlx prepare --check`
+  and `docker build`; keep them in sync.

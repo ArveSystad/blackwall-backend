@@ -66,6 +66,13 @@ cargo sqlx prepare --check -- --all-targets  # confirms .sqlx/ is current
 
 Commit the updated `.sqlx/`. A stale `.sqlx/` fails the build on purpose.
 
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
+`main` and every pull request. It runs the same fmt, clippy and test commands,
+plus `cargo sqlx prepare --check -- --all-targets` against PostgreSQL 17 and a
+Docker build. A stale `.sqlx/` therefore fails CI.
+
 ## Deployment notes
 
 There are no body size or rate limits (contract §8). A reverse proxy in front of
