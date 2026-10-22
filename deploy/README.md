@@ -1,9 +1,9 @@
 # Deploying the sync service
 
-`deploy/compose.yml` is the production stack: the service image built from the
-repo's `Dockerfile`, PostgreSQL 17 and a `backup` sidecar that dumps the
-database every night. It is meant to sit behind a reverse proxy that terminates
-TLS. The root `docker-compose.yml` stays the local development setup.
+`deploy/compose.yml` is the production stack: only the sync service, built from
+the repo's `Dockerfile`. PostgreSQL is provided externally (section 3). The
+service is meant to sit behind a reverse proxy that terminates TLS. The root
+`docker-compose.yml` stays the local development setup.
 
 All commands below run from the repo root on the server.
 
@@ -18,9 +18,27 @@ blackwall client has no default endpoint (contract §9 decision 1).
 
 - A Linux host with Docker Engine and the Docker Compose v2 plugin
   (`docker compose version`).
-- A reverse proxy that meets the requirements in section 3.
+- An external PostgreSQL database that meets the requirements in section 3.
+- A reverse proxy that meets the requirements in section 4.
 
-## 3. Reverse proxy requirements
+## 3. External database requirements
+
+- **PostgreSQL 17.**
+- **A dedicated database** for the sync service, e.g. `blackwall`.
+- **A non-superuser role that owns that database.** The service runs its sqlx
+  migrations on startup, so the role must be able to create tables in the
+  database. It needs no other privileges.
+- **Network reachability from the container.** The service connects from inside
+  Docker, so `localhost` in `DATABASE_URL` means the container, not the host.
+  Use a hostname or address reachable from the Docker network, and allow the
+  host in the database's firewall and `pg_hba.conf`.
+- **TLS for a remote database.** Append `?sslmode=require` (or `verify-full` to
+  also check the certificate) to `DATABASE_URL`.
+
+Backups of the database are the database provider's responsibility; this stack
+takes none.
+
+## 4. Reverse proxy requirements
 
 Whichever proxy is chosen must:
 
@@ -43,22 +61,25 @@ interface, and Docker-published ports bypass ufw/iptables `INPUT` rules, so a
 host firewall does not protect it. Only change it if the proxy runs on another
 machine and the port is firewalled upstream of the host.
 
-## 4. First deploy
+## 5. First deploy
+
+Create the database and role first (section 3), then:
 
 ```sh
 git clone <repo-url> blackwall-backend && cd blackwall-backend
 cp deploy/.env.example deploy/.env
-# Edit deploy/.env: set POSTGRES_PASSWORD (openssl rand -hex 32) and review the rest.
-mkdir -m 700 deploy/backups
+# Edit deploy/.env: set DATABASE_URL and review the rest.
+chmod 600 deploy/.env
 docker compose -f deploy/compose.yml up -d --build
 ```
 
-The service applies the database migrations on startup. Compose refuses to
-start if `POSTGRES_PASSWORD` is unset.
+The service applies the database migrations on startup and exits if it cannot
+connect or migrate; check the logs (section 8). Compose refuses to start if
+`DATABASE_URL` is unset.
 
-Then configure the reverse proxy to the requirements in section 3.
+Then configure the reverse proxy to the requirements in section 4.
 
-## 5. Smoke test
+## 6. Smoke test
 
 On the host:
 
@@ -83,51 +104,19 @@ curl -i -X DELETE "$URL/v1/sync/$ID" -H 'X-Write-Token: smoke'
 curl -i "$URL/v1/sync/$ID"
 ```
 
-## 6. Update
+## 7. Update
 
 ```sh
 git pull && docker compose -f deploy/compose.yml up -d --build
 ```
 
 Building compiles the Rust binary on the server, which takes a few minutes of
-CPU. New migrations run when the service restarts.
+CPU. New migrations run against the external database when the service
+restarts, so take or confirm a database backup with the provider before an
+update that adds migrations.
 
-## 7. Backups
-
-- The `backup` container writes `deploy/backups/blackwall-<UTC timestamp>.dump`
-  (`pg_dump -Fc`) once when it starts and then every `BACKUP_INTERVAL_SECONDS`
-  (default 86400, daily).
-- Dumps older than `BACKUP_RETENTION_DAYS` (default 14) are deleted.
-- Each dump is written to a `.dump.tmp` file and renamed when complete. A
-  leftover `.dump.tmp` from an interrupted run is removed on the next pass.
-- A failed dump is logged as `backup: pg_dump failed` and retried on the next
-  pass.
-- The dumps contain write-token hashes; keep `deploy/backups/` at mode `700`.
-- Copying `deploy/backups/` off the server is the host's job. Until that is set
-  up, a disk loss takes the backups with it.
-- Run only one `backup` container per backup directory: the `.tmp` cleanup
-  assumes it is the only writer.
-- `pg_dump` and the server both come from `postgres:17`. A major PostgreSQL
-  upgrade needs a dump and restore.
-
-## 8. Restore
+## 8. Logs
 
 ```sh
-docker compose -f deploy/compose.yml stop service
-docker compose -f deploy/compose.yml exec -T postgres \
-  pg_restore -U blackwall -d blackwall --clean --if-exists < deploy/backups/<file>.dump
-docker compose -f deploy/compose.yml start service
+docker compose -f deploy/compose.yml logs service
 ```
-
-## 9. Logs
-
-```sh
-docker compose -f deploy/compose.yml logs service backup
-```
-
-## 10. Note on the database volume
-
-The `pgdata` volume is initialised only on first start. If it already exists
-from a run with a different `POSTGRES_USER` or `POSTGRES_PASSWORD`, changing
-`deploy/.env` does not re-initialise it; change the role in Postgres or remove
-the volume (losing its data).

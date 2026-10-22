@@ -75,8 +75,8 @@ Docker build. A stale `.sqlx/` therefore fails CI.
 
 ## Deployment
 
-The production stack (service, PostgreSQL and nightly backups) and its runbook
-are in [`deploy/README.md`](deploy/README.md).
+The production stack (the service only; PostgreSQL is provided externally) and
+its runbook are in [`deploy/README.md`](deploy/README.md).
 
 There are no body size or rate limits (contract §8). A reverse proxy in front of
 the service must raise its own body limit (nginx defaults to 1 MB), or large
